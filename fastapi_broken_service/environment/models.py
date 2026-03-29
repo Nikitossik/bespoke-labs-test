@@ -12,12 +12,3 @@ class Payment(Base):
     idempotency_key = Column(String, nullable=False, index=True)
     amount = Column(Integer, nullable=False)
     status = Column(String, nullable=False, default="succeeded")
-
-
-class PaymentAttempt(Base):
-    __tablename__ = "payment_attempts"
-
-    id = Column(Integer, primary_key=True)
-    idempotency_key = Column(String, nullable=False, index=True)
-    status = Column(String, nullable=False)
-    error = Column(String, nullable=True)

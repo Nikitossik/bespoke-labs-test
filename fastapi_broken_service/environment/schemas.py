@@ -3,7 +3,6 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class PaymentRequest(BaseModel):
     amount: int = Field(gt=0)
-    simulate_transient_failure: bool = False
 
 
 class PaymentResponse(BaseModel):

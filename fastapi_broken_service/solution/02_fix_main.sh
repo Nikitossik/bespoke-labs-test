@@ -9,7 +9,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
-from models import Base, Payment, PaymentAttempt
+from models import Base, Payment
 from schemas import PaymentRequest, PaymentResponse
 
 
@@ -46,26 +46,6 @@ def create_payment(
             response_body = PaymentResponse.model_validate(existing_payment).model_dump(by_alias=True)
             return JSONResponse(status_code=200, content=response_body)
 
-        failed_once = (
-            db.query(PaymentAttempt)
-            .filter(
-                PaymentAttempt.idempotency_key == idempotency_key,
-                PaymentAttempt.status == "failed_transient",
-            )
-            .first()
-        )
-
-        if payload.simulate_transient_failure and failed_once is None:
-            db.add(
-                PaymentAttempt(
-                    idempotency_key=idempotency_key,
-                    status="failed_transient",
-                    error="temporary_gateway_timeout",
-                )
-            )
-            db.commit()
-            raise HTTPException(status_code=503, detail="temporary_gateway_timeout")
-
         payment = Payment(
             idempotency_key=idempotency_key,
             amount=payload.amount,
@@ -73,14 +53,6 @@ def create_payment(
         )
         db.add(payment)
         db.flush()
-
-        db.add(
-            PaymentAttempt(
-                idempotency_key=idempotency_key,
-                status="succeeded",
-                error=None,
-            )
-        )
         db.commit()
         db.refresh(payment)
 

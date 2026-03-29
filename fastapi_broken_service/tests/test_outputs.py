@@ -64,18 +64,14 @@ def _load_fresh_app_module():
     return app_module
 
 
-def _count_rows(idempotency_key: str) -> tuple[int, int]:
+def _count_rows(idempotency_key: str) -> int:
     con = sqlite3.connect(DB_FILE)
     try:
         payment_count = con.execute(
             "SELECT COUNT(*) FROM payments WHERE idempotency_key = ?",
             (idempotency_key,),
         ).fetchone()[0]
-        attempt_count = con.execute(
-            "SELECT COUNT(*) FROM payment_attempts WHERE idempotency_key = ?",
-            (idempotency_key,),
-        ).fetchone()[0]
-        return payment_count, attempt_count
+        return payment_count
     finally:
         con.close()
 
@@ -98,8 +94,16 @@ def test_same_key_same_payload_is_idempotent():
     assert first_body["payment_id"] == second_body["payment_id"]
     assert second_body["amount"] == payload["amount"]
 
-    payment_count, _ = _count_rows("same-key-1")
+    payment_count = _count_rows("same-key-1")
     assert payment_count == 1
+
+
+def test_missing_idempotency_key_returns_400():
+    app_module = _load_fresh_app_module()
+    client = TestClient(app_module.app)
+
+    response = client.post("/payments", json={"amount": 100})
+    assert response.status_code == 400, response.text
 
 
 def test_same_key_different_payload_returns_conflict():
@@ -114,30 +118,5 @@ def test_same_key_different_payload_returns_conflict():
     second = client.post("/payments", json={"amount": 900}, headers=headers)
     assert second.status_code == 409, second.text
 
-    payment_count, _ = _count_rows("same-key-different-amount")
+    payment_count = _count_rows("same-key-different-amount")
     assert payment_count == 1
-
-
-def test_retry_after_transient_failure_creates_single_payment():
-    app_module = _load_fresh_app_module()
-    client = TestClient(app_module.app)
-
-    headers = {"Idempotency-Key": "retry-key-1"}
-    payload = {"amount": 2100, "simulate_transient_failure": True}
-
-    first = client.post("/payments", json=payload, headers=headers)
-    assert first.status_code == 503, first.text
-
-    second = client.post("/payments", json=payload, headers=headers)
-    assert second.status_code == 201, second.text
-
-    third = client.post("/payments", json=payload, headers=headers)
-    assert third.status_code == 200, third.text
-
-    second_id = second.json()["payment_id"]
-    third_id = third.json()["payment_id"]
-    assert second_id == third_id
-
-    payment_count, attempt_count = _count_rows("retry-key-1")
-    assert payment_count == 1
-    assert attempt_count >= 2
