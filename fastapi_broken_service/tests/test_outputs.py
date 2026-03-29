@@ -106,6 +106,39 @@ def test_missing_idempotency_key_returns_400():
     assert response.status_code == 400, response.text
 
 
+def test_blank_idempotency_key_after_trim_returns_400():
+    app_module = _load_fresh_app_module()
+    client = TestClient(app_module.app)
+
+    headers = {"Idempotency-Key": "   "}
+    response = client.post("/payments", json={"amount": 100}, headers=headers)
+    assert response.status_code == 400, response.text
+
+
+def test_trimmed_idempotency_key_is_used_for_lookup_and_storage():
+    app_module = _load_fresh_app_module()
+    client = TestClient(app_module.app)
+
+    first_headers = {"Idempotency-Key": "  trim-key-1  "}
+    second_headers = {"Idempotency-Key": "trim-key-1"}
+    payload = {"amount": 333}
+
+    first = client.post("/payments", json=payload, headers=first_headers)
+    assert first.status_code == 201, first.text
+
+    second = client.post("/payments", json=payload, headers=second_headers)
+    assert second.status_code == 200, second.text
+
+    first_body = first.json()
+    second_body = second.json()
+    assert first_body["payment_id"] == second_body["payment_id"]
+    assert first_body["idempotency_key"] == "trim-key-1"
+    assert second_body["idempotency_key"] == "trim-key-1"
+
+    payment_count = _count_rows("trim-key-1")
+    assert payment_count == 1
+
+
 def test_same_key_different_payload_returns_conflict():
     app_module = _load_fresh_app_module()
     client = TestClient(app_module.app)

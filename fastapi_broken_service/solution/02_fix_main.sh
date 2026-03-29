@@ -30,6 +30,10 @@ def create_payment(
     if not idempotency_key:
         raise HTTPException(status_code=400, detail="Idempotency-Key header is required")
 
+    idempotency_key = idempotency_key.strip()
+    if not idempotency_key:
+        raise HTTPException(status_code=400, detail="Idempotency-Key header is required")
+
     db = SessionLocal()
     try:
         existing_payment = (
